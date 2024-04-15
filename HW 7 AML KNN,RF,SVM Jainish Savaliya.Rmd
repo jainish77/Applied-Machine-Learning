@@ -1,0 +1,255 @@
+---
+title: "HW 7 KNN SVM RF"
+output: html_document
+date: "2023-03-27"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(caret))
+suppressPackageStartupMessages(library(kernlab)) # for SVM
+library(e1071) # also for SVM
+suppressPackageStartupMessages(library(randomForest))
+library(rsample)
+library(RColorBrewer) # customized coloring of plots
+
+
+# helper packages
+
+library(readr)       # for data import
+library(dplyr)       # for data wrangling
+
+# modeling packages
+library(RWeka)       # access to the J48 (C4.5) algorithm (requires Java installation)
+library(caret)       # meta engine for decision tree application
+
+# model interpretations packages
+library(rpart.plot)  # for plotting decision trees
+library(vip)         # for feature importance
+library(party)
+
+library(ggplot2)
+```
+
+
+```{r}
+train = read_csv('digit-train.csv')
+test = read_csv('digit-test.csv')
+#here the train data set is too big and will take too much time running so we will slice the dataset to 1000 rows.
+train = train[1:1000,]
+test = test[1:1000,]
+#here we should not factorize whole data so we just factorizing the label column.
+train$label = as.factor(train$label)
+test$label = as.factor(test$label)
+#test[,1] = factor(test[,1])
+
+
+head(train)
+head(test)
+#reading the train data set file to digit and ploting tha image to see the digits with the labels
+digits = read.csv('digit-train.csv')
+
+plot_image = function(.dat, .row) {
+  
+  photo = data.frame(
+    x = rep(1:28, times = 28),
+    y = rep(28:1, each = 28),
+    shade = as.numeric(.dat[.row,-1]))
+  
+  ggplot(data = photo) + 
+    geom_point(aes(x=x,y=y,color=shade), size=11, shape=15) + 
+    theme(
+      axis.line=element_blank(),
+      axis.text.x=element_blank(),
+      axis.text.y=element_blank(),
+      axis.ticks=element_blank(),
+      axis.title.x=element_blank(),
+      axis.title.y=element_blank(),
+      legend.position="none",
+      panel.background=element_blank(),
+      panel.border=element_blank(),
+      panel.grid.major=element_blank(),
+      panel.grid.minor=element_blank(),
+      plot.background=element_blank()) + 
+    scale_color_gradient(low="white",high="black") + 
+    geom_text(aes(x=28,y=28),label=.dat[.row,1])
+  
+}
+
+plot_image(digits, sample(nrow(digits), 1))
+```
+
+
+```{r}
+# create response and feature data
+#for x which is our feature we will take the whole trainset except the labels column.
+#for y we will take the data in the lable column.
+features = setdiff(names(train), 'label') # this code provides all the names of train that are not pep, our target variable
+x = train[,features] # so that we can select just these 'features' in this step
+y = train$label
+```
+### Run the k-NN algorithm
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+
+
+
+# odd numbers so we don't have ties
+search.grid = expand.grid(k = seq(5, 25, 2))
+
+# set up 3-fold cross validation 10 times
+train.control = trainControl(
+  method = 'repeatedcv', 
+  number = 3,
+  repeats = 10
+  )
+
+# train model
+knn = train(x = x,
+  y = y,
+  method = 'knn',
+  trControl = train.control,
+  tuneGrid = search.grid
+  )
+```
+
+Verify model performance
+```{r}
+# performance results for the top 5 models
+knn$results |> 
+  top_n(5, wt = Accuracy) |> 
+  arrange(desc(Accuracy))
+
+# results for the best model
+confusionMatrix(knn)
+
+pred = predict(knn, newdata = test)
+#we will create the confusion matrix to see the accuracy of the model.
+confusionMatrix(pred, test$label)
+```
+
+
+#run random Forest
+```{r}
+search.grid = expand.grid(.mtry = (1:5))
+# set up 3-fold cross validation  times
+train.control = trainControl(
+  method = 'cv', 
+  number = 3,
+  classProbs = TRUE
+  )
+
+
+rf = train(label ~. , data=train,
+           method = 'rf' ,
+           metric = 'Accuracy',
+           trControl = train.control,
+           tuneGrid = search.grid)
+
+# results for best model
+confusionMatrix(rf)
+```
+
+
+
+
+
+```{r}
+
+pred = predict(rf, newdata = test)
+confusionMatrix(pred, test$label)
+
+```
+#run SVM Linear
+
+```{r}
+search.grid = expand.grid(C = seq(0.1, 2, length = 20))
+
+# set up 3-fold cross validation 10 times
+train.control = trainControl(
+  method = 'cv', 
+  number = 3,
+  
+  classProbs = TRUE
+  )
+
+
+svm = train(label ~.,
+                data = train,
+  method = 'svmLinear',
+  trControl = train.control,
+  tuneGrid = search.grid
+  )
+# results for best model
+confusionMatrix(svm)
+```
+
+
+#Test and evaluate the model on the testing data
+```{r}
+pred = predict(svm, newdata = test)
+confusionMatrix(pred, test$label)
+```
+
+
+##run SVM Radial
+```{r}
+search.grid = expand.grid(sigma = seq(0.1, 2, length = 20),
+                          C = seq(0.1, 2, length = 20))
+# set up 3-fold cross validation 10 times
+train.control = trainControl(
+  method = 'cv', 
+  number = 3,
+  
+  classProbs = TRUE
+  )
+# this takes a while to run
+svm.m3 = train(label ~.,
+                data = train,
+                method = 'svmRadial',
+                trControl = train.control,
+                tuneGrid = search.grid)
+
+# saveRDS(svm.m3, 'svm.m3.rds')
+
+# read in saved model
+svm.m3 = readRDS('svm.m3.rds')
+
+# performance results for the top 5 models
+svm.m3$results |>  
+  top_n(5, wt = Accuracy) |> 
+  arrange(desc(Accuracy))
+
+# results for the best model
+confusionMatrix(svm.m3)
+```
+
+
+#Test and evaluate the model on the testing data
+```{r}
+pred = predict(svm.m3, newdata = test)
+confusionMatrix(pred, test$label)
+```

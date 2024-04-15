@@ -1,0 +1,142 @@
+---
+title: "HW 4  AML"
+author: "Jainish Savaliya"
+date: "2023-02-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(factoextra)
+library(tidyverse, warn.conflicts = FALSE)  # data manipulation
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering algorithms & visualization
+library(gridExtra)  # subfigure layout package
+
+
+author = read_csv('fed_papers.csv')
+author <- author[author$author=="Hamilton" | author$author == "Madison" | author$author == "dispt",]
+
+print(author$author)
+
+#author Labels
+author_labels <-author$author
+table(author_labels)
+
+
+#drop the Missing Values
+author = na.omit(author)
+
+str(author)
+
+
+#unlable the data
+author_unlabeled <- author[, which(!names(author) %in% c('author', 'filename'))]
+
+#scale the data
+author.scaled = scale(author_unlabeled)
+
+
+#distance
+distance = factoextra::get_dist(author.scaled) # default method is euclidean
+
+# visualization of the distance matrix
+factoextra::fviz_dist(distance,gradient = list(low = "red", mid = "white", high = "blue"))
+
+#calculating how many clusters do we need
+#within sum of squares
+#fviz_nbclust(author_unlabeled , kmeans , method='wss') + labs(subtitle = "elbow method")
+
+#kmeans
+model.r = kmeans(author.scaled,
+                 centers = 5, # the number of clusters
+                 nstart = 45 # if centers is a number, how many random sets should be chosen?
+                 )
+
+rownames(author.scaled) <- paste(author$author , 1:dim(author)[1] , sep = "_")
+model.r
+
+#print just centroids
+model.r$centers
+length(model.r$cluster)
+length(author$author)
+
+#get Cluster Assignment
+cluster.assignment = data.frame(author, model.r$cluster) |>
+  relocate(model.r.cluster, .after = filename) 
+glimpse(cluster.assignment)
+
+
+
+
+
+
+
+
+
+#select the best K
+k2 = kmeans(author.scaled, centers = 2, nstart = 50)
+#k6 = kmeans(author.scaled, centers = 6, nstart = 50)
+#k4 = kmeans(author.scaled, centers = 4, nstart = 50)
+
+# plots to compare
+p1 = fviz_cluster(k2, geom = "point",  data = author.scaled) + ggtitle("k = 2")
+#p2 = fviz_cluster(k6, geom = "point",  data = author.scaled) + ggtitle("k = 6")
+#p3 = fviz_cluster(k4, geom = "point",  data = author.scaled) + ggtitle("k = 4")
+#p4 = fviz_cluster(model.r, geom = "point", data = author.scaled) + ggtitle("k = 7")
+
+library(gridExtra)
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+
+
+set.seed(123)
+gap.stat = clusGap(author.scaled, FUN = kmeans,
+                   K.max = 8, B = 50)
+
+set.seed(123)
+fviz_gap_stat(gap.stat)
+
+
+final.res = kmeans(author.scaled, 2, nstart = 50)
+
+fviz_cluster(final.res, data = author.scaled)
+
+author.scaled = as.data.frame(author.scaled)
+author.scaled$cluster = final.res$cluster
+
+author.scaled |> 
+  group_by(cluster) |> 
+  summarise_all(mean)
+
+table(author$author, author.scaled$cluster)
+
+
+
+
+```
+
+
+```{r setup, include=FALSE}
+
+```
+
+
+```{r setup, include=FALSE}
+
+
+```
+
+
+```
+```{r}
+
+```
+```{r}
+
+```
+```{r}
+
+```
+

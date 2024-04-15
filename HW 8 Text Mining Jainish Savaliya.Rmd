@@ -1,0 +1,339 @@
+---
+title: "HW 8 Text Mining"
+author: "Jainish Savaliya"
+date: "2023-04-03"
+output: html_document
+---
+
+```{r}
+library(tidyverse) # for data manipulation
+library(tidytext) # for tokenization
+library(textstem) # for word stemming and lemmatization
+library(caret) # for classification
+```
+
+
+```{r}
+mydata <- read.csv("Ddata.txt", header = TRUE, sep = "\t")
+glimpse(mydata)
+```
+
+
+#Look at the first positive review
+```{r}
+mydata[mydata$lie == 'fake',][1,1]
+```
+
+Look at the first negative review
+```{r}
+mydata[mydata$lie == 'true',][1,1]
+```
+
+
+
+### Some basic data cleaning steps
+```{r}
+# rename the columns
+
+
+# make the positive flag a two-level factor that measures sentiment
+# this is important for classification
+mydata$lie = factor(mydata$lie, labels = c('fake', 'true'))
+mydata$sentiment = factor(mydata$sentiment, labels = c('Negative', 'Positive'))
+
+# create an index for each review, since in the next steps we will be re-shaping the data set
+mydata$Index = 1:nrow(mydata)
+mydata = relocate(mydata, Index, .before = lie) # put index first
+```
+
+
+
+### "Tokenize" the `review` column.
+```{r}
+mydata.tidy = mydata |>
+  unnest_tokens(word, review) # inputs to this function are name for output column then input column
+
+head(mydata.tidy)
+tail(mydata.tidy)
+```
+
+
+### Remove Stop Words
+```{r}
+head(stop_words)
+
+mydata.tidy = mydata.tidy |> 
+  
+  mutate(word = str_remove_all(word, '[^a-z]')) |>  # first, remove anything that is not a lowercase letter, using a regular expression. note that the unnest_tokens() function already converts letters to lower case. 
+  filter(word != '') |> # remove blank entries now that non-letters have been removed
+  
+  anti_join(stop_words) # anti-join acts like a filter, where matches from the joined data are removed from the original
+```
+
+```{r}
+head(mydata.tidy)
+```
+
+```{r}
+tail(mydata.tidy)
+```
+
+
+### Word stemming and lemmatization
+```{r}
+mydata.tidy$word_stemmed = stem_words(mydata.tidy$word)
+
+mydata.tidy$word_lemmatized = lemmatize_words(mydata.tidy$word)
+
+mydata.tidy |>
+  slice(c(2,33,49,222,229)) # these rows were selected for their differences and are specific to this data set
+
+mydata.tidy = mydata.tidy |> select(Index, lie , sentiment, word = word_lemmatized)
+```
+
+
+
+### Word frequencies, convert to wide format for classification task
+#1 For lie
+
+```{r}
+mydata.wide = mydata.tidy |> 
+  count(Index, word) |>  # here we implicitly drop sentiment and score which we can retrieve later using the index as a key
+  spread(word, n, fill = 0, drop = FALSE) |> 
+  left_join(mydata |> select(Index, sentiment, lie )) |>  # add sentiment back in
+  relocate(sentiment , lie, .after = Index)
+  
+```
+
+
+#Let's look at the first 5 rows and 5 columns
+```{r}
+mydata.wide[1:5, 1:5]
+```
+
+
+```{r}
+set.seed(9)
+index = createDataPartition(y=mydata.wide$lie, p=0.5, list=FALSE)
+
+train.set = mydata.wide[index,]
+test.set = mydata.wide[-index,]
+
+dim(train.set)
+dim(test.set)
+```
+
+
+```{r}
+### Fit a SVM model
+
+# these parameters are specific to a polynomial kernel
+search.grid = expand.grid(degree = c(1, 2, 3),
+                          scale = c(0.001, 0.01, 0.1, 1.0),
+                          C = seq(0.1, 2, length = 10))
+
+# set up 5-fold cross validation
+train.control = trainControl(
+  method = 'cv', 
+  number = 5
+  )
+
+svm.m1 = train(lie ~.,
+               data = train.set,
+               method = 'svmPoly',
+               trControl = train.control,
+               tuneGrid = search.grid)
+
+
+confusionMatrix(svm.m1)
+```
+
+
+```{r}
+
+pred = predict(svm.m1, newdata = test.set)
+confusionMatrix(pred, test.set$lie)
+```
+
+
+#Naive Bayes
+```{r}
+train_control_adv = trainControl(
+  method = 'cv', 
+  number = 5,
+  
+  )
+
+# set up tuning grid
+search_grid = expand.grid(usekernel = c(TRUE, FALSE),
+                          laplace = c(0, 1), 
+                          adjust = c(0,1,2))
+
+head(search_grid)
+
+options(warnings = -1)
+
+# train model
+nb.m1 = train(lie ~.,
+               data = mydata.wide,
+              method = 'naive_bayes',
+  trControl = train_control_adv,
+  tuneGrid = search_grid
+  )
+
+confusionMatrix(nb.m1)
+```
+
+
+```{r}
+pred = predict(nb.m1, newdata = test.set)
+confusionMatrix(pred, test.set$lie)
+```
+
+
+### Word frequencies, convert to wide format for classification task
+#1 For Sentiment
+
+```{r}
+mydata.wide = mydata.tidy |> 
+  count(Index, word) |>  # here we implicitly drop sentiment and score which we can retrieve later using the index as a key
+  spread(word, n, fill = 0, drop = FALSE) |> 
+  left_join(mydata |> select(Index,sentiment )) |>  # add sentiment back in
+  relocate(sentiment, .after = Index)
+  #relocate(sentiment, .after = lie)# relocate the sentiment column
+```
+```{r}
+mydata.wide[1:5, 1:5]
+```
+
+
+```{r}
+set.seed(9)
+index = createDataPartition(y=mydata.wide$sentiment, p=0.5, list=FALSE)
+
+train.set = mydata.wide[index,]
+test.set = mydata.wide[-index,]
+
+dim(train.set)
+dim(test.set)
+```
+
+
+```{r}
+### Fit a SVM model
+
+# these parameters are specific to a polynomial kernel
+search.grid = expand.grid(degree = c(1, 2, 3),
+                          scale = c(0.001, 0.01, 0.1, 1.0),
+                          C = seq(0.1, 2, length = 10))
+
+# set up 5-fold cross validation
+train.control = trainControl(
+  method = 'cv', 
+  number = 5
+  )
+
+svm.m2 = train(sentiment ~.,
+               data = train.set,
+               method = 'svmPoly',
+               trControl = train.control,
+               tuneGrid = search.grid)
+confusionMatrix(svm.m2)
+```
+
+
+```{r}
+pred = predict(svm.m2, newdata = test.set)
+confusionMatrix(pred, test.set$sentiment)
+```
+#Look at the best model in the tuning grid
+
+```{r}
+svm.m2$results |> top_n(n = 1, wt = Accuracy)
+
+```
+#Look at the worst model in the tuning grid
+
+```{r}
+svm.m2$results |> top_n(n = 1, wt = -Accuracy)
+
+
+```
+
+#Naive Bayes
+```{r}
+train_control_adv = trainControl(
+  method = 'cv', 
+  number = 5,
+  
+  )
+
+# set up tuning grid
+search_grid = expand.grid(usekernel = c(TRUE, FALSE),
+                          laplace = c(0, 1), 
+                          adjust = c(0,1,2))
+
+head(search_grid)
+
+options(warnings = -1)
+
+# train model
+nb.m2 = train(sentiment ~.,
+               data = train.set,
+              method = 'naive_bayes',
+  trControl = train_control_adv,
+  tuneGrid = search_grid
+  )
+confusionMatrix(nb.m2)
+
+```
+
+
+```{r}
+pred = predict(nb.m2, newdata = test.set)
+confusionMatrix(pred, test.set$sentiment)
+```
+
+```{r}
+nb.m2$results |> top_n(n = 1, wt = Accuracy)
+```
+```{r}
+nb.m2$results |> top_n(n = 1, wt = -Accuracy)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+

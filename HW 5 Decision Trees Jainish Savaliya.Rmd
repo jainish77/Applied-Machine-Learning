@@ -1,0 +1,108 @@
+---
+title: "HW 5 Decision Trees Jainish Savaliya"
+author: "Jainish Savaliya"
+date: "2023-03-07"
+output: html_document
+---
+
+
+```{r}
+# helper packages
+library(readr)       # for data import
+library(dplyr)       # for data wrangling
+
+# modeling packages
+library(RWeka)       # access to the J48 (C4.5) algorithm (requires Java installation)
+library(caret)       # meta engine for decision tree application
+
+# model interpretations packages
+library(rpart.plot)  # for plotting decision trees
+library(vip)         # for feature importance
+library(party)
+
+library(ggplot2)
+```
+
+```{r}
+fedpapers = read.csv('fedpaperstree.csv')
+
+
+```
+
+```{r}
+
+fedpapers = fedpapers%>% select(-c(filename
+                       ))
+
+
+exclude_levels <- c('dispt', 'HM', 'Jay')
+disp_levels <- c('dispt')
+disp_paper = subset(fedpapers, author %in% disp_levels)
+# Filter the dataset to exclude the rows that contain the excluded factor levels
+fedpapers <- subset(fedpapers, !author %in% exclude_levels)
+
+
+
+
+```
+
+```{r}
+
+glimpse(fedpapers)
+```
+
+
+```{r}
+fedpapers$author = as.factor(fedpapers$author)
+```
+
+
+```{r}
+fedpapers$author
+```
+
+
+```{r}
+names(fedpapers)
+str(fedpapers)
+```
+
+
+```{r}
+set.seed(9)
+index = createDataPartition(y=fedpapers$author, p=0.5, list=FALSE)
+train.set = fedpapers[index,]
+test.set = fedpapers[-index,]
+
+
+m = train(author ~ .,
+          data = train.set,
+          method = 'J48', # use rpart if you cannot use J48
+          )
+
+fedpapers.pred = predict(m, newdata = test.set)
+plot(m$finalModel)
+
+```
+
+```{r}
+table(fedpapers.pred, test.set$author)
+
+# https://topepo.github.io/caret/measuring-performance.html
+confusionMatrix(data = fedpapers.pred, reference = test.set$author)
+```
+
+
+
+```{r}
+predict(m, newdata = disp_paper)
+```
+
+
+```{r}
+
+
+
+
+```
+

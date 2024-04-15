@@ -1,0 +1,258 @@
+---
+title: "naive bayes"
+author: "Jainish Savaliya"
+date: "2023-03-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+# helper packages
+library(naivebayes)
+library(readr)       # for data import
+library(dplyr)       # for data wrangling
+
+# modeling packages
+library(RWeka)       # access to the J48 (C4.5) algorithm (requires Java installation)
+library(caret)       # meta engine for decision tree application
+
+# model interpretations packages
+library(rpart.plot)  # for plotting decision trees
+library(vip)         # for feature importance
+library(party)
+
+library(ggplot2)
+```
+
+
+```{r}
+train = read.csv('digit-train.csv')
+test = read.csv('digit-test.csv')
+#here the train data set is too big and will take too much time running so we will slice the dataset to 1000 rows.
+train = train[1:1000,]
+#here we should not factorize whole data so we just factorizing the label column.
+train[,1] = as.factor(train[,1])
+test[,1] = as.factor(test[,1])
+
+head(train)
+head(test)
+#reading the train data set file to digit and ploting tha image to see the digits with the labels
+digits = read.csv('digit-train.csv')
+
+plot_image = function(.dat, .row) {
+  
+  photo = data.frame(
+    x = rep(1:28, times = 28),
+    y = rep(28:1, each = 28),
+    shade = as.numeric(.dat[.row,-1]))
+  
+  ggplot(data = photo) + 
+    geom_point(aes(x=x,y=y,color=shade), size=11, shape=15) + 
+    theme(
+      axis.line=element_blank(),
+      axis.text.x=element_blank(),
+      axis.text.y=element_blank(),
+      axis.ticks=element_blank(),
+      axis.title.x=element_blank(),
+      axis.title.y=element_blank(),
+      legend.position="none",
+      panel.background=element_blank(),
+      panel.border=element_blank(),
+      panel.grid.major=element_blank(),
+      panel.grid.minor=element_blank(),
+      plot.background=element_blank()) + 
+    scale_color_gradient(low="white",high="black") + 
+    geom_text(aes(x=28,y=28),label=.dat[.row,1])
+  
+}
+
+plot_image(digits, sample(nrow(digits), 1))
+```
+```{r}
+
+# create response and feature data
+#for x which is our feature we will take the whole trainset except the labels column.
+#for y we will take the data in the lable column.
+features = setdiff(names(train), 'label') # this code provides all the names of train that are not pep, our target variable
+x = train[, features] # so that we can select just these 'features' in this step
+y = train$label
+```
+
+#for Naive Bayes model
+```{r}
+
+# a more advanced option, run 5 fold cross validation 10 times
+train_control_adv <- trainControl(
+  method = 'repeatedcv', #we can use simple cv as well
+  number = 5,
+  repeats = 10
+  )
+# train model
+nb.M1 = train(
+  x = x,
+  y = y,
+  method = 'naive_bayes',
+  trControl = train_control_adv
+  )
+```
+```{r}
+
+```
+
+
+```{r}
+#This code creates a grid of all possible combinations of three tuning parameters for a kernel density estimation (KDE) model. The parameters are usekernel, laplace, and adjust, which respectively determine whether to use a kernel function or a uniform distribution, the amount of Laplace smoothing to apply, and the bandwidth adjustment factor. usekernel is a logical parameter that takes values of TRUE or FALSE, while laplace and adjust are numeric parameters. The resulting search_grid data frame can be used to search for the optimal combination of parameters to use for the KDE model.
+
+search_grid = expand.grid(usekernel = c(TRUE, FALSE),
+                          laplace = c(0, 1), 
+                          adjust = c(0,1,2))
+
+head(search_grid)
+
+options(warnings = -1)
+
+```
+
+
+```{r}
+
+#we will run the new tuned naive bayes model
+start= Sys.time()
+# train model
+nb.M1 = train(
+  x = x,
+  y = y,
+  method = 'naive_bayes',
+  trControl = train_control_adv,
+  tuneGrid = search_grid
+  )
+
+Sys.time() - start
+```
+
+
+```{r}
+pred = predict(nb.M1, newdata = test)
+#we will create the confusion matrix to see the accuracy of the model.
+confusionMatrix(pred, test$label)
+```
+
+
+```{r}
+# top 5 models
+nb.M1$results %>% 
+  top_n(5, wt = Accuracy) %>%
+  arrange(desc(Accuracy))
+```
+
+
+```{r}
+# results for best model
+#confusionMatrix(nb.M1)
+
+pred = predict(nb.M1, newdata = test)
+confusionMatrix(pred, test$label)
+
+nb.M1$results %>% 
+  top_n(5, wt = Accuracy) %>%
+  arrange(desc(Accuracy))
+
+```
+
+
+
+
+
+
+
+# for Decision trees
+```{r}
+# more advanced option, run 5 fold cross validation 10 times
+train_control_adv = trainControl(
+  method = 'repeatedcv', 
+  number = 5,
+  repeats = 10
+  )
+```
+
+
+```{r}
+# train model
+dt.M3 = train(
+  x = x,
+  y = y,
+  method = 'rpart',
+  trControl = train_control_adv
+  )
+dt.M3$results %>% 
+  top_n(5, wt = Accuracy) %>%
+  arrange(desc(Accuracy))
+
+```
+```{r}
+
+```
+
+
+
+```{r}
+pred = predict(dt.M3, newdata = test)
+confusionMatrix(pred, test$label)
+```
+
+
+```{r}
+start= Sys.time()
+# set up tuning grid for the confidence parameter
+search_grid = expand.grid(cp = seq(.01, .50, .01))
+
+# train model
+dt.M3 = train(
+  x = x,
+  y = y,
+  method = 'rpart',
+  trControl = train_control_adv,
+  tuneGrid = search_grid
+  )
+Sys.time() - start
+
+# top 5 models
+dt.M3$results %>% 
+  top_n(5, wt = Accuracy) %>%
+  arrange(desc(Accuracy))
+
+```
+
+
+```{r}
+# results for best model
+
+#lastly we will predict on our test data and will create the confusion matrix to get the accuracy.
+pred = predict(dt.M3, newdata = test)
+confusionMatrix(pred, test$label)
+
+
+```
+
